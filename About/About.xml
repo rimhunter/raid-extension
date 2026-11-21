@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+    <name>Raid Extension (rimhunter)</name>
+    <author>Shadowrabbit, llunak, rimhunter</author>
+    <packageId>rimhunter.raidextension</packageId>
+    <modVersion>1.1.0</modVersion>
+    <url>https://github.com/rimhunter/raid-extension</url>
+    <supportedVersions>
+        <li>1.6</li>
+        <li>1.7</li>
+    </supportedVersions>
+    <loadAfter>
+        <li>Ludeon.RimWorld</li>
+        <li>Ludeon.RimWorld.Royalty</li>
+    </loadAfter>
+    <incompatibleWith>
+        <li>sr.modrimworld.raidextension</li>
+        <li>sr.modrimworld.raidextensioncontinued</li>
+    </incompatibleWith>
+    <description>Raid Extension (rimhunter) is a continuation of Shadowrabbit's Raid Extension for RimWorld 1.6 and 1.7, by rimhunter. It is built from Shadowrabbit's own source under the Apache License 2.0, with credit to llunak (the 1.6 fork) where his work is used. rimhunter claims no ownership of the original, and will hand this mod back, or take it down, at Shadowrabbit's request. Source and changelog: https://github.com/rimhunter/raid-extension
+
+Do not run another Raid Extension build alongside this one: RimWorld's mod list warns when the original, the 1.5 continuation or the 1.6 fork is enabled.
+
+4 new incidents have been added to this mod. These events expanded the ways in which hostile factions interact with colonists, making them not limited to the form of raids.
+
+The preview image is new, drawn by rimhunter. This mod accepts no donations. If you want to thank someone, thank Shadowrabbit.</description>
+</ModMetaData>

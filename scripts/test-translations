@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+languages=(
+  "ChineseSimplified (简体中文)"
+  "ChineseTraditional (繁體中文)"
+  "French (Français)"
+  "German (Deutsch)"
+  "Japanese (日本語)"
+  "Korean (한국어)"
+  "PortugueseBrazilian (Português Brasileiro)"
+  "Russian (Русский)"
+)
+for language in "${languages[@]}"; do
+  echo "launch in $language: letters, labels, report strings and keys read back from the files on disk"
+  "$here/scripts/run-scenarios" --language "$language" -s translation-booted-language-letters-labels-and-keys-come-from-the-language-files "$@"
+done

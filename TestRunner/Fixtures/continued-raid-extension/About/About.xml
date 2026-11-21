@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+    <name>[SR]Raid Extension Continued [Abandoned]</name>
+    <author>test fixture</author>
+    <packageId>SR.ModRimworld.RaidExtensionContinued</packageId>
+    <supportedVersions>
+        <li>1.6</li>
+        <li>1.7</li>
+    </supportedVersions>
+    <description>Test-only stand-in that carries the package id of the 1.5 continuation of Raid Extension. It has no code. Never shipped.</description>
+</ModMetaData>

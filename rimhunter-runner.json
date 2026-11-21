@@ -1,0 +1,27 @@
+{
+  "worldSeed": "raidextension-runner-world",
+  "packageId": "rimhunter.raidextension",
+  "modAssembly": "ModRimWorldRaidExtension.dll",
+  "modProject": "Source/ModRimWorldRaidExtension.csproj",
+  "runnerProject": "TestRunner/Source/RaidExtensionTestRunner.csproj",
+  "runnerPackageId": "rimhunter.raidextension.testrunner",
+  "runnerAssembly": "RaidExtensionTestRunner.dll",
+  "runnerDir": "TestRunner",
+  "scenarioDirs": [
+    "TestRunner/Source"
+  ],
+  "extraLaunches": [
+    {"label": "translations in the eight non-English languages (eight launches)", "command": ["scripts/test-translations"]}
+  ],
+  "stageExclude": [
+    "Source",
+    "Tests",
+    "scripts",
+    "*.proj",
+    "global.json",
+    "LICENSE",
+    ".gitignore",
+    "rimhunter-runner.json",
+    "external"
+  ]
+}

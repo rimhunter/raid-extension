@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+dotnet="${DOTNET:-$HOME/.dotnet/dotnet}"
+build=1
+if [ "${1:-}" = "--no-build" ]; then build=0; shift; fi
+out="${1:-$here/dist/rimhunter.raidextension}"
+
+if [ "$build" = 1 ]; then
+  [ -x "$dotnet" ] || { echo "package: dotnet not found at $dotnet (set DOTNET)" >&2; exit 4; }
+  "$dotnet" build "$here/Build.proj" >&2
+fi
+
+for v in 1.6 1.7; do
+  [ -f "$here/$v/Assemblies/ModRimWorldRaidExtension.dll" ] || { echo "package: $v/Assemblies/ModRimWorldRaidExtension.dll is missing; build first" >&2; exit 4; }
+done
+
+[ ! -e "$here/About/PublishedFileId.txt" ] || { echo "package: About/PublishedFileId.txt is in the tree; this mod has no Workshop id yet, and the original's id must never be packaged" >&2; exit 4; }
+
+case "$out" in ""|/|"$HOME"|"$here") echo "package: refusing output folder '$out'" >&2; exit 4;; esac
+rm -rf "$out"
+mkdir -p "$out"
+
+cp -r "$here/About" "$here/Defs" "$here/Languages" "$out/"
+cp "$here/LoadFolders.xml" "$here/LICENSE" "$here/NOTICE" "$here/MODIFICATIONS" "$here/CHANGELOG.md" "$out/"
+for v in 1.6 1.7; do
+  mkdir -p "$out/$v/Assemblies"
+  cp "$here/$v/Assemblies/ModRimWorldRaidExtension.dll" "$out/$v/Assemblies/"
+done
+mkdir -p "$out/Source"
+(cd "$here/Source" && find . \( -name bin -o -name obj \) -prune -o -type f -print0 | xargs -0 cp --parents -t "$out/Source")
+
+(cd "$out" && find . -type f | sort | sed 's|^\./||')

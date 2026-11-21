@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+dotnet="${DOTNET:-$HOME/.dotnet/dotnet}"
+[ -x "$dotnet" ] || { echo "prepare-factional-war: dotnet not found at $dotnet (set DOTNET)" >&2; exit 4; }
+src="${RIMHUNTER_FACTIONALWAR_SRC:-}"
+[ -n "$src" ] && [ -d "$src/.git" ] || { echo "prepare-factional-war: the scenario together-with-factional-war needs a build of Factional War (rimhunter) in external/factional-war; set RIMHUNTER_FACTIONALWAR_SRC to a checkout of it (it is read at origin/main and its branch is never changed)" >&2; exit 4; }
+out="$here/external/factional-war"
+git -C "$src" fetch -q origin
+sha="$(git -C "$src" rev-parse origin/main)"
+if [ "$(cat "$out/.built-from" 2>/dev/null || true)" = "$sha" ] && [ -f "$out/1.6/Assemblies/ModRimWorldFactionalWar.dll" ] && [ -f "$out/1.7/Assemblies/ModRimWorldFactionalWar.dll" ]; then
+  echo "prepare-factional-war: $sha is built"
+  exit 0
+fi
+rm -rf "$out"
+mkdir -p "$out"
+git -C "$src" archive origin/main | tar -x -C "$out"
+for v in 1.6 1.7; do
+  "$dotnet" build "$out/Source/ModRimWorldFactionalWar.csproj" -c Release -p:GameVersion=$v \
+    -p:BaseIntermediateOutputPath="$out/obj/$v/" -p:MSBuildRestoreSessionId="$(cat /proc/sys/kernel/random/uuid)" -restore -nologo -v:q >&2
+done
+printf '%s\n' "$sha" > "$out/.built-from"
+echo "prepare-factional-war: built $sha"

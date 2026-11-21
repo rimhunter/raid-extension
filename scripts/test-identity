@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+set -uo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here"
+for v in 1.6 1.7; do
+  [ -f "$v/Assemblies/ModRimWorldRaidExtension.dll" ] || { echo "build both versions first (dotnet build Build.proj): $v/Assemblies/ModRimWorldRaidExtension.dll is missing" >&2; exit 4; }
+done
+git rev-parse -q --verify original-1.4 >/dev/null || { echo "tag original-1.4 (Shadowrabbit's last commit, 5f91103) is missing; fetch tags" >&2; exit 4; }
+fail=0
+check() {
+  local out
+  if out="$("${@:2}" 2>&1)"; then echo "PASS $1"; else echo "FAIL $1"; [ -z "$out" ] || printf '%s\n' "$out" | sed 's/^/    /'; fail=1; fi
+}
+upstream() { git show "original-1.4:$1"; }
+ORIGINAL_ID=2554928098
+
+about_ok() {
+  python3 -I - About/About.xml <<'PY'
+import sys, xml.etree.ElementTree as ET
+r = ET.parse(sys.argv[1]).getroot()
+t = lambda p: r.findtext(p)
+assert t("name") == "Raid Extension (rimhunter)", t("name")
+assert t("name").lower() != "[sr]raid extension", "name collides with the original"
+assert t("packageId") == "rimhunter.raidextension", t("packageId")
+assert [a.strip() for a in t("author").split(",")] == ["Shadowrabbit", "llunak", "rimhunter"], t("author")
+assert t("url") == "https://github.com/rimhunter/raid-extension", t("url")
+desc = t("description")
+for need in ("continuation", "Shadowrabbit", "llunak", "Apache License", "no ownership", "https://github.com/rimhunter/raid-extension"):
+    assert need in desc, "the About description does not mention " + need
+assert "donation" in desc.lower(), "the About description does not say the mod takes no donations"
+assert "hositle" not in desc.lower()
+assert t("modVersion") == "1.1.0", t("modVersion")
+assert [e.text for e in r.findall("supportedVersions/li")] == ["1.6", "1.7"]
+assert r.find("modDependencies") is None and r.find("modDependenciesByVersion") is None, "dependencies declared"
+assert [e.text for e in r.findall("loadAfter/li")] == ["Ludeon.RimWorld", "Ludeon.RimWorld.Royalty"]
+ids = sorted(e.text.lower() for e in r.findall("incompatibleWith/li"))
+assert ids == ["sr.modrimworld.raidextension", "sr.modrimworld.raidextensioncontinued"], ids
+PY
+}
+version_ok() {
+  python3 -I - <<'PY'
+import re, xml.etree.ElementTree as ET
+about = ET.parse("About/About.xml").getroot().findtext("modVersion")
+proj = open("Source/ModRimWorldRaidExtension.csproj", encoding="utf-8").read()
+m = re.search(r"<Version>([^<]+)</Version>", proj)
+assert m, "the csproj sets no <Version>"
+assert m.group(1) == about, "csproj Version %s does not match About.xml modVersion %s" % (m.group(1), about)
+assert "AssemblyVersion" not in proj and "FileVersion" not in proj, "set only <Version>"
+PY
+}
+license_unchanged() { upstream LICENSE | cmp - LICENSE; }
+notice_ok() {
+  python3 -I - <<'PY'
+import subprocess
+n = open("NOTICE", encoding="utf-8").read()
+for need in ("Shadowrabbit", "Apache License, Version 2.0", "MODIFICATIONS", "CHANGELOG.md", "llunak"):
+    assert need in n, "NOTICE does not mention " + need
+m = open("MODIFICATIONS", encoding="utf-8").read()
+for need in ("Shadowrabbit/RaidExtension", "5f91103", "Apache License, Version 2.0", "CHANGELOG.md", "2026-"):
+    assert need in m, "MODIFICATIONS does not mention " + need
+assert "Modifications Copyright 2026 rimhunter" in m
+tree = subprocess.run(["git", "ls-tree", "-r", "--name-only", "original-1.4"], check=True, capture_output=True).stdout.decode().split("\n")
+assert not [p for p in tree if p.upper().startswith("NOTICE")], "the original ships a NOTICE: it must be kept unchanged, and this check updated"
+PY
+}
+changelog_ok() {
+  python3 -I - <<'PY'
+import re
+c = open("CHANGELOG.md", encoding="utf-8").read()
+assert "5f91103" in c and "original-1.4" in c
+assert re.search(r"^## (Unreleased|[0-9]+\.[0-9]+\.[0-9]+ \([0-9]{4}-[0-9]{2}-[0-9]{2}\))", c, re.M)
+lines = [l for l in c.split("\n") if l.startswith("- ")]
+assert lines and all(re.match(r"- [0-9]{4}-[0-9]{2}-[0-9]{2}: ", l) for l in lines), "a change line has no date"
+for l in lines:
+    if re.search(r"\bfix(es)?\b|taken from", l, re.I):
+        by = re.search(r"Shadowrabbit|llunak|rimhunter", l)
+        assert by, "a fix entry names no author: " + l[:90]
+        if by.group(0) == "llunak":
+            assert re.search(r"commit [0-9a-f]{7}\b", l), "a fix taken from another build names no commit: " + l[:90]
+low = c.lower()
+for need in ("compile fix", "1.6", "1.7", "publishedfileid", "assembly-csharp", "supportedversions", "incompatiblewith", "krafs.rimworld.ref"):
+    assert need in low, "CHANGELOG does not list: " + need
+PY
+}
+languages_ok() {
+  python3 -I - "$here" <<'PY'
+import sys, os, subprocess, xml.etree.ElementTree as ET
+root = sys.argv[1]
+def git(*a): return subprocess.run(["git", "-C", root, *a], check=True, capture_output=True).stdout
+def entries(raw, where):
+    r = ET.fromstring(raw.lstrip(b"\xef\xbb\xbf \t\r\n"))
+    tags = [e.tag for e in r if isinstance(e.tag, str)]
+    assert len(tags) == len(set(tags)), "duplicate key in " + where
+    return {e.tag: (e.text or "") for e in r if isinstance(e.tag, str)}
+old = [p for p in git("ls-tree", "-r", "--name-only", "original-1.4", "Languages").decode().split("\n") if p]
+keys = 0
+for path in old:
+    if path == "Languages/Korean/LanguageInfo.xml":
+        assert not os.path.exists(os.path.join(root, path)), path + " must not ship"
+        continue
+    assert os.path.isfile(os.path.join(root, path)), "lost " + path
+    was = entries(git("show", "original-1.4:" + path), path)
+    now = entries(open(os.path.join(root, path), "rb").read(), path)
+    for tag, text in was.items():
+        if path.startswith("Languages/English/") and "Hositle" in text:
+            text = text.replace("Hositle", "Hostile")
+        assert now.get(tag) == text, "key lost or changed: %s %s" % (path, tag)
+        keys += 1
+assert keys > 100, keys
+PY
+}
+package_ok() {
+  local out rc=0; out="$(mktemp -d)"
+  scripts/package --no-build "$out/pkg" >/dev/null || rc=1
+  if [ $rc = 0 ]; then
+    for p in About/About.xml LICENSE NOTICE MODIFICATIONS CHANGELOG.md Source/ModRimWorldRaidExtension.csproj Source/Incident/IncidentWorkerPoaching.cs \
+             Languages/English/Keyed/LordJobPoaching.xml Languages/Russian; do
+      [ -e "$out/pkg/$p" ] || { echo "missing $p"; rc=1; }
+    done
+  fi
+  rm -rf "$out"
+  return $rc
+}
+runner_ids_ok() {
+  python3 -I - <<'PY'
+import json, xml.etree.ElementTree as ET
+c = json.load(open("rimhunter-runner.json"))
+assert c["packageId"] == "rimhunter.raidextension", c["packageId"]
+r = ET.parse("TestRunner/About/About.xml").getroot()
+assert [e.text for e in r.findall("loadAfter/li")] == ["rimhunter.raidextension"]
+PY
+}
+no_original_id_ok() {
+  local tracked hits
+  tracked="$( (git ls-files; git ls-files --others --exclude-standard) | grep -v '^TestRunner/shared$' | sort -u)"
+  [ -z "$(grep -i 'PublishedFileId' <<<"$tracked")" ] || { echo "no PublishedFileId file may be in the tree yet; found: $(grep -i PublishedFileId <<<"$tracked")"; return 1; }
+  hits="$(printf '%s\n' "$tracked" | xargs grep -Il "$ORIGINAL_ID" 2>/dev/null | grep -vE '^(CHANGELOG.md|NOTICE|WORKSHOP.md|Readme.md|scripts/test-identity)$')"
+  [ -z "$hits" ] || { echo "the original's Workshop id $ORIGINAL_ID appears in: $hits"; return 1; }
+}
+tree_clean() {
+  [ ! -e Source/Lib ] && [ -z "$(git ls-files | grep -E '(^|/)Assembly-CSharp\.dll$')" ] &&
+  [ -z "$(git ls-files -- '*.dll' '*.pdb')" ]
+}
+
+check "About.xml identity, version and incompatibleWith" about_ok
+preview_ok() {
+  python3 -I - <<'PY'
+import hashlib, struct, subprocess
+def git(*a): return subprocess.run(["git", *a], check=True, capture_output=True).stdout
+mine = open("About/Preview.png", "rb").read()
+assert mine[:8] == b"\x89PNG\r\n\x1a\n", "About/Preview.png is not a PNG"
+orig = [p for p in git("ls-tree", "-r", "--name-only", "original-1.4").decode().split("\n") if p.lower().endswith((".png", ".jpg", ".jpeg", ".psd", ".dds", ".ogg", ".wav", ".mp3"))]
+assert orig == ["About/Preview.png"], "the original ships art other than its preview: %s; the research said it does not" % orig
+bad = {hashlib.sha256(git("show", "original-1.4:" + p)).hexdigest() for p in orig}
+files = git("ls-files", "--cached", "--others", "--exclude-standard").decode().split("\n")
+for f in files:
+    if f and not f.startswith("TestRunner/shared") and f.lower().endswith((".png", ".jpg", ".jpeg")):
+        assert hashlib.sha256(open(f, "rb").read()).hexdigest() not in bad, "the original's preview image is in the tree at " + f
+w, h = struct.unpack(">II", mine[16:24])
+assert (w, h) == (1024, 576), "preview is %dx%d, not 1024x576" % (w, h)
+assert not [f for f in files if f.lower().endswith((".ogg", ".wav", ".mp3", ".dds")) or f.startswith(("Textures/", "Sounds/"))], "the tree ships textures or sounds the research does not show may ship"
+PY
+}
+workshop_ok() {
+  python3 -I - <<'PY'
+import re
+raw = open("WORKSHOP.md", encoding="utf-8").read()
+head, sep, body = raw.partition("\n---\n")
+assert sep, "WORKSHOP.md has no --- line separating the notes from the BBCode"
+visible = re.sub(r"\[noparse\].*?\[/noparse\]", "", body, flags=re.S)
+stack = []
+for m in re.finditer(r"\[(/?)([a-z0-9*]+)(?:=[^\]]*)?\]", visible):
+    close, tag = m.group(1) == "/", m.group(2)
+    if tag == "*":
+        assert stack and stack[-1] == "list", "[*] outside a [list]"
+        continue
+    assert tag in ("h1", "h2", "h3", "b", "i", "u", "list", "url", "quote", "code"), "unknown BBCode tag [%s]" % tag
+    if close:
+        assert stack and stack[-1] == tag, "unbalanced [/%s]" % tag
+        stack.pop()
+    else:
+        stack.append(tag)
+assert not stack, "unclosed BBCode tags: %s" % stack
+assert "# " not in "\n".join(l for l in body.split("\n") if l.startswith("#")), "Markdown heading in the BBCode body"
+assert not re.search(r"^\s*[-*] ", body, re.M), "Markdown bullet in the BBCode body"
+assert not re.search(r"\]\(http", body), "Markdown link in the BBCode body"
+assert body.lstrip().startswith("[h1]Raid Extension (rimhunter)[/h1]")
+low = body.lower()
+for need in ("Shadowrabbit", "llunak", "Ionfrigate12345", "Apache License 2.0", "claims no ownership", "taken down", "handed back",
+             "accepts no donations", "Unsubscribe from these first", "https://github.com/rimhunter/raid-extension/issues",
+             "Ludeon Studios", "Think you found a bug?", "poach", "logging", "caravan", "traveler"):
+    assert need.lower() in low, "WORKSHOP.md does not mention: " + need
+for need in ("2554928098", "3220647134", "3340459422", "sr.modrimworld.raidextension", "sr.modrimworld.raidextensioncontinued"):
+    assert need in low, "the unsubscribe list does not name " + need
+known = {"2554928098", "3220647134", "3340459422"}
+ids = set(re.findall(r"filedetails/\?id=([0-9]+)", raw)) | set(re.findall(r"Workshop id ([0-9]+)", raw))
+assert ids <= known, "WORKSHOP.md names a Workshop id that is not one of the builds to unsubscribe from: %s" % (ids - known)
+assert "PublishedFileId" in head or "no PublishedFileId.txt" in head
+PY
+}
+readme_ok() {
+  python3 -I - <<'PY'
+r = open("Readme.md", encoding="utf-8").read()
+assert r.startswith("# Raid Extension (rimhunter)")
+for need in ("Shadowrabbit", "llunak", "Apache License", "claims no ownership", "https://github.com/rimhunter/raid-extension/issues", "no donations", "Ludeon Studios", "CHANGELOG.md"):
+    assert need in r, "Readme.md does not mention " + need
+PY
+}
+fixtures_ok() {
+  python3 -I - <<'PY'
+import glob, xml.etree.ElementTree as ET
+ours = {e.text.lower() for e in ET.parse("About/About.xml").getroot().findall("incompatibleWith/li")}
+fx = {ET.parse(p).getroot().findtext("packageId").lower() for p in glob.glob("TestRunner/Fixtures/*/About/About.xml")}
+assert fx == ours, "the scenario fixtures %s do not match incompatibleWith %s" % (sorted(fx), sorted(ours))
+PY
+}
+check "csproj version equals About.xml" version_ok
+check "preview image is rimhunter's own and the tree ships no other original art" preview_ok
+check "WORKSHOP.md is balanced Steam BBCode with the required content" workshop_ok
+check "Readme.md credits, licenses and links the bug tracker" readme_ok
+check "mod-list scenario fixtures cover every incompatibleWith id" fixtures_ok
+check "LICENSE unchanged from the original" license_unchanged
+check "NOTICE and MODIFICATIONS state the modifications under Apache-2.0" notice_ok
+check "CHANGELOG dated, names the original commit, credits each fix" changelog_ok
+check "every key of the original's translations kept unchanged" languages_ok
+check "package folder contents" package_ok
+check "runner config names the new packageId" runner_ids_ok
+check "no Workshop id file and no original Workshop id outside the docs" no_original_id_ok
+check "no committed binary or bundled game DLL" tree_clean
+exit $fail
